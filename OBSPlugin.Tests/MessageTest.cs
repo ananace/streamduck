@@ -25,18 +25,18 @@ public class MessageTest
     """;
 
     var serializeOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-    var message = JsonSerializer.Deserialize<Message>(inputData, serializeOpts);
+    var message = JsonSerializer.Deserialize<Client.Message>(inputData, serializeOpts);
 
-    Assert.That(message, Is.InstanceOf<Messages.Hello>(), "Deserialized message did not result in Hello");
+    Assert.That(message, Is.InstanceOf<Client.Messages.Hello>(), "Deserialized message did not result in Hello");
 
-    var hello = message as Messages.Hello;
+    var hello = message as Client.Messages.Hello;
     Assert.That(hello.Authentication.Challenge, Is.EqualTo("+IxH4CnCiqpX1rM9scsNynZzbOe4KhDeYcTNS3PDaeY="));
     Assert.That(hello.Authentication.Salt, Is.EqualTo("lM1GncleQOaCu9lT1yeUZhFYnqhsLLP1G5lAGo3ixaI="));
 
-    var identify = new Messages.Identify("supersecretpassword", hello.Authentication) { RPCVersion = 1 };
+    var identify = new Client.Messages.Identify("supersecretpassword", hello.Authentication) { RPCVersion = 1 };
 
     serializeOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-    var outputData = JsonSerializer.Serialize<Message>(identify, serializeOpts);
+    var outputData = JsonSerializer.Serialize<Client.Message>(identify, serializeOpts);
     var expectedOutputData = """
     {
       "op": 1,

@@ -1,6 +1,6 @@
 using System;
 
-namespace OBSPlugin;
+namespace OBSPlugin.Client;
 
 [AttributeUsage(AttributeTargets.Class)]
 internal class RPCRequestAttribute : Attribute

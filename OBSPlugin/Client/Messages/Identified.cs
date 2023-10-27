@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OBSPlugin.Messages;
+namespace OBSPlugin.Client.Messages;
 
 [Opcode(2)]
 public class Identified : Message

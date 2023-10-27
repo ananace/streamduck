@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OBSPlugin.Requests;
+namespace OBSPlugin.Client.Requests;
 
 [RPCRequest("GetVersion")]
 public class GetVersionRequest : RPCRequest

@@ -1,4 +1,4 @@
-namespace OBSPlugin;
+namespace OBSPlugin.Client;
 
 public class RPCResponse
 {

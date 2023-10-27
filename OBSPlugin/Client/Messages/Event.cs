@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace OBSPlugin.Messages;
+namespace OBSPlugin.Client.Messages;
 
 [Opcode(5)]
 public class Event : Message

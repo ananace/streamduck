@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 
-namespace OBSPlugin.Messages;
+namespace OBSPlugin.Client.Messages;
 
 [Opcode(1)]
 public class Identify : Message

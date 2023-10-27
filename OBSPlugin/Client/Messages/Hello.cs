@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OBSPlugin.Messages;
+namespace OBSPlugin.Client.Messages;
 
 [Opcode(0)]
 public class Hello : Message

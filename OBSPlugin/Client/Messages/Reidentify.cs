@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace OBSPlugin.Messages;
+namespace OBSPlugin.Client.Messages;
 
 [Opcode(3)]
 public class Reidentify : Message

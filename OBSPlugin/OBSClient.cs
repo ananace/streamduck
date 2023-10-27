@@ -1,21 +1,32 @@
 using System;
+using System.Collections.Generic;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using OBSPlugin.Util;
 
 namespace OBSPlugin;
 
 public class OBSClient : IDisposable
 {
   ClientWebSocket? _ws;
+  Thread? _readLoop;
+  Dictionary<Guid, TaskCompletionSource<Client.Messages.RequestResponse>> _rpcInFlight = new Dictionary<Guid, TaskCompletionSource<Client.Messages.RequestResponse>>();
 
-  public async void Connect(string URL, string? Password = null)
+  public async void Connect(string URL, string? Password = null, CancellationToken cToken = default)
   {
+    if (_ws?.State == WebSocketState.Open)
+    {
+      await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, default, cToken);
+      _ws.Dispose();
+    }
+
     Uri uri = new(URL);
     _ws = new();
-    await _ws.ConnectAsync(uri, default);
+    await _ws.ConnectAsync(uri, cToken);
 
-    var hello = await ReadMessage() as Messages.Hello;
+    var hello = await ReadMessage(cToken) as Client.Messages.Hello;
     if (hello == null)
       throw new Exception();
 
@@ -27,33 +38,55 @@ public class OBSClient : IDisposable
       if (Password == null)
         throw new Exception();
 
-      await SendMessage(new Messages.Identify(Password, auth) { RPCVersion = hello.RPCVersion });
+      await SendMessage(new Client.Messages.Identify(Password, auth) { RPCVersion = hello.RPCVersion }, cToken);
     }
     else
-      await SendMessage(new Messages.Identify() { RPCVersion = hello.RPCVersion });
+      await SendMessage(new Client.Messages.Identify() { RPCVersion = hello.RPCVersion }, cToken);
 
-    var identified = await ReadMessage() as Messages.Identified;
+    var identified = await ReadMessage(cToken) as Client.Messages.Identified;
     if (identified == null)
       throw new Exception();
 
     Console.WriteLine("Connected to WS with protocol {}", identified.NegotiatedRPCVersion);
 
-    // StartReaderLoop();
+    _readLoop = new Thread(new ThreadStart(ReadLoop));
+    _readLoop.Start();
   }
 
   public void Dispose()
   {
+    _readLoop = null;
+    _rpcInFlight.Clear();
     _ws?.Dispose();
     _ws = null;
   }
 
-  async Task<Message> ReadMessage()
+  void ReadLoop()
   {
+    while (_ws?.State == WebSocketState.Open)
+    {
+      var msg = ReadMessage();
+      msg.Wait();
+
+      if (msg.Result is Client.Messages.RequestResponse rpcResponse && rpcResponse.RequestID != null)
+      {
+        var waiting = _rpcInFlight[rpcResponse.RequestID.Value];
+        if (waiting != null)
+          waiting.SetResult(rpcResponse);
+      }
+    }
+  }
+
+  async Task<Client.Message> ReadMessage(CancellationToken cToken = default)
+  {
+    if (_ws?.State != WebSocketState.Open)
+      throw new Exception();
+
     StringBuilder data = new StringBuilder();
-    while (true)
+    while (!cToken.IsCancellationRequested)
     {
       var bytes = new byte[1024];
-      var wsResult = await _ws.ReceiveAsync(bytes, default);
+      var wsResult = await _ws.ReceiveAsync(bytes, cToken);
       if (wsResult.MessageType != WebSocketMessageType.Text)
         throw new Exception();
 
@@ -62,49 +95,61 @@ public class OBSClient : IDisposable
       if (wsResult.EndOfMessage)
         break;
     }
+    cToken.ThrowIfCancellationRequested();
 
     var serializeOpts = new JsonSerializerOptions
     {
       PropertyNameCaseInsensitive = true
     };
-    var msg = JsonSerializer.Deserialize<Message>(data.ToString(), serializeOpts);
+    var msg = JsonSerializer.Deserialize<Client.Message>(data.ToString(), serializeOpts);
     if (msg == null)
       throw new Exception();
 
     return msg;
   }
 
-  async Task SendMessage(Message message)
+  async Task SendMessage(Client.Message message, CancellationToken cToken = default)
   {
-    if (_ws.State != WebSocketState.Open)
+    if (_ws?.State != WebSocketState.Open)
       throw new Exception();
 
     var serializeOpts = new JsonSerializerOptions
     {
       PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
-    var json = JsonSerializer.Serialize<Message>(message, serializeOpts);
+    var json = JsonSerializer.Serialize<Client.Message>(message, serializeOpts);
 
     var bytes = Encoding.UTF8.GetBytes(json);
-    await _ws.SendAsync(bytes, WebSocketMessageType.Text, true, default);
+    await _ws.SendAsync(bytes, WebSocketMessageType.Text, true, cToken);
   }
 
-  public async Task<T> SendRPC<T>(RPCRequest request) where T : RPCResponse
+  public async Task<T> SendRPC<T>(Client.RPCRequest request, CancellationToken cToken = default) where T : Client.RPCResponse
   {
-    var reqMsg = new Messages.Request { RequestType = request.RPCRequestType, RequestData = request };
-    await SendMessage(reqMsg);
+    var reqMsg = new Client.Messages.Request { RequestType = request.RPCRequestType, RequestData = request };
+    var inFlightTask = new TaskCompletionSource<Client.Messages.RequestResponse>();
 
-    // TODO: Reader loop
+    try
+    {
+      _rpcInFlight[reqMsg.RequestID] = inFlightTask;
+      await SendMessage(reqMsg, cToken);
 
-    var msg = await ReadMessage() as Messages.RequestResponse;
-    if (msg == null)
-      throw new Exception();
+      await inFlightTask.WaitAsync(cToken);
+      cToken.ThrowIfCancellationRequested();
 
-    if (!msg.IsSuccess)
-      throw new Exception();
-    if (msg.RequestID != reqMsg.RequestID)
-      throw new Exception();
+      var msg = await inFlightTask.Task;
+      if (msg == null)
+        throw new Exception();
 
-    return msg.ToRPCResponse<T>();
+      if (!msg.IsSuccess)
+        throw new Exception();
+      if (msg.RequestID != reqMsg.RequestID)
+        throw new Exception();
+
+      return msg.ToRPCResponse<T>();
+    }
+    finally
+    {
+      _rpcInFlight.Remove(reqMsg.RequestID);
+    }
   }
 }

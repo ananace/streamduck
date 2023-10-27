@@ -1,6 +1,6 @@
 using System;
 
-namespace OBSPlugin;
+namespace OBSPlugin.Client;
 
 [Flags]
 public enum EventSubscription

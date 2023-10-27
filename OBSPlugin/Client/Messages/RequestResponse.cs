@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace OBSPlugin.Messages;
+namespace OBSPlugin.Client.Messages;
 
 [Opcode(7)]
 public class RequestResponse : Message
@@ -35,6 +35,10 @@ public class RequestResponse : Message
     var data = JsonSerializer.Serialize(ResponseData);
 
     var serializeOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-    return JsonSerializer.Deserialize<T>(data, serializeOpts);
+    var response = JsonSerializer.Deserialize<T>(data, serializeOpts);
+    if (response == null)
+      throw new Exception();
+
+    return response;
   }
 }

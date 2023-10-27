@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Text.Json.Serialization;
 
-namespace OBSPlugin;
+namespace OBSPlugin.Client;
 
 [JsonConverter(typeof(MessageConverter))]
 public class Message
