@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -10,9 +11,13 @@ namespace OBSPlugin;
 
 public class OBSClient : IDisposable
 {
+  public string? CurrentProgramSceneName { get; private set; }
+  public IReadOnlyList<string> CurrentSceneItems => _currentSceneItems;
+
   ClientWebSocket? _ws;
   Thread? _readLoop;
   Dictionary<Guid, TaskCompletionSource<Client.Messages.RequestResponse>> _rpcInFlight = new Dictionary<Guid, TaskCompletionSource<Client.Messages.RequestResponse>>();
+  List<string> _currentSceneItems = new List<string>();
 
   public async void Connect(string URL, string? Password = null, CancellationToken cToken = default)
   {
@@ -73,6 +78,22 @@ public class OBSClient : IDisposable
         var waiting = _rpcInFlight[rpcResponse.RequestID.Value];
         if (waiting != null)
           waiting.SetResult(rpcResponse);
+      }
+
+      if (msg.Result is Client.Messages.Event ev)
+      {
+        switch (ev.EventType)
+        {
+          case "CurrentProgramSceneChanged":
+            CurrentProgramSceneName = ev.ToEvent<Client.Events.CurrentProgramSceneChanged>().SceneName;
+            _currentSceneItems.Clear();
+
+            // Request an updated scene item list in the background
+            var task = SendRPC<Client.Requests.GetSceneItemListResponse>(new Client.Requests.GetSceneItemListRequest { SceneName = CurrentProgramSceneName });
+            task.Start();
+
+            break;
+        }
       }
     }
   }
@@ -145,7 +166,12 @@ public class OBSClient : IDisposable
       if (msg.RequestID != reqMsg.RequestID)
         throw new Exception();
 
-      return msg.ToRPCResponse<T>();
+      var response = msg.ToRPCResponse<T>();
+      
+      if (response is Client.Requests.GetSceneItemListResponse itemList && itemList.SceneItems != null)
+        _currentSceneItems = itemList.SceneItems.ToList();
+
+      return response;
     }
     finally
     {
